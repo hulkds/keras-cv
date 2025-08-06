@@ -99,7 +99,7 @@ class PyCOCOCallback(Callback):
         source_ids = np.char.mod(
             "%d", np.linspace(1, total_images, total_images)
         )
-        num_detections = ops.sum(ops.cast(gt_classes > 0, "int32"), axis=-1)
+        num_detections = ops.sum(ops.cast(gt_classes >= 0, "int32"), axis=-1)
 
         ground_truth = {
             "source_id": [source_ids],

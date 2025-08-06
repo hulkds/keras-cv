@@ -89,17 +89,17 @@ class NonMaxSuppression(keras.layers.Layer):
 
         confidence_prediction = ops.max(class_prediction, axis=-1)
 
-        if not keras_3() or keras.backend.backend() == "tensorflow":
-            idx, valid_det = tf.image.non_max_suppression_padded(
-                box_prediction,
-                confidence_prediction,
-                max_output_size=self.max_detections,
-                iou_threshold=self.iou_threshold,
-                score_threshold=self.confidence_threshold,
-                pad_to_max_output_size=True,
-                sorted_input=False,
-            )
-        elif keras.backend.backend() == "torch":
+        # if not keras_3() or keras.backend.backend() == "tensorflow":
+        #     idx, valid_det = tf.image.non_max_suppression_padded(
+        #         box_prediction,
+        #         confidence_prediction,
+        #         max_output_size=self.max_detections,
+        #         iou_threshold=self.iou_threshold,
+        #         score_threshold=self.confidence_threshold,
+        #         pad_to_max_output_size=True,
+        #         sorted_input=False,
+        #     )
+        if keras.backend.backend() == "torch":
             # Since TorchVision has a nice efficient NMS op, we might as well
             # use it!
             import torchvision
