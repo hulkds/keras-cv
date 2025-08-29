@@ -41,7 +41,61 @@ from keras_cv.src.models.task import Task
 from keras_cv.src.utils.python_utils import classproperty
 from keras_cv.src.utils.train import get_feature_extractor
 
+import tensorflow as tf
+
 BOX_REGRESSION_CHANNELS = 64
+
+class WeightedBCELoss(tf.keras.losses.Loss):
+    def __init__(self, pos_weight=None, from_logits=False, reduction=tf.keras.losses.Reduction.AUTO, name="weighted_bce"):
+        """
+        Args:
+            pos_weight: scalar or 1D tensor/list of shape [num_classes]
+                        Up-weights positive examples per class.
+            from_logits: whether y_pred are raw logits (True) or probabilities (False).
+        """
+        super().__init__(reduction=reduction, name=name)
+
+        if pos_weight is not None:
+            pos_weight = tf.convert_to_tensor(pos_weight, dtype=tf.float32)
+        self.pos_weight = pos_weight
+        self.from_logits = from_logits
+
+    def call(self, y_true, y_pred):
+        y_true = tf.cast(y_true, dtype=tf.float32)
+        y_pred = tf.cast(y_pred, dtype=tf.float32)
+
+        if self.from_logits:
+            if self.pos_weight is None:
+                # equivalent to plain BCE with logits
+                loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=y_true, logits=y_pred)
+            else:
+                # apply per-class pos_weight
+                loss = tf.nn.weighted_cross_entropy_with_logits(
+                    labels=y_true,
+                    logits=y_pred,
+                    pos_weight=self.pos_weight
+                )
+        else:
+            eps = tf.keras.backend.epsilon()
+            if self.pos_weight is None:
+                loss = - y_true * tf.math.log(y_pred + eps) - (1 - y_true) * tf.math.log(1 - y_pred + eps)
+            else:
+                loss = - y_true * tf.math.log(y_pred + eps) * self.pos_weight \
+                       - (1 - y_true) * tf.math.log(1 - y_pred + eps)
+
+        return loss
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "pos_weight": self.pos_weight.numpy().tolist() if self.pos_weight is not None else None,
+            "from_logits": self.from_logits,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
 
 def get_anchors(
@@ -497,8 +551,12 @@ class YOLOV8Detector(Task):
                 )
         if isinstance(classification_loss, str):
             if classification_loss == "binary_crossentropy":
-                classification_loss = keras.losses.BinaryCrossentropy(
-                    reduction="sum"
+                # classification_loss = keras.losses.BinaryCrossentropy(
+                #     reduction="sum"
+                # )
+                classification_loss = WeightedBCELoss(
+                    reduction=sum,
+                    pos_weight=[1.0, 1.0, 0.1, 1.0, 1.0, 1.0, 1.0]
                 )
             else:
                 raise ValueError(

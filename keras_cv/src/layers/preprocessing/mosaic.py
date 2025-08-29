@@ -84,7 +84,7 @@ class Mosaic(VectorizedBaseImageAugmentationLayer):
     """  # noqa: E501
 
     def __init__(
-        self, offset=(0.25, 0.75), bounding_box_format=None, seed=None, **kwargs
+        self, offset=(0.25, 0.75), bounding_box_format=None, seed=None, min_box_ratio_thresh=0.2, **kwargs
     ):
         super().__init__(seed=seed, **kwargs)
         self.offset = offset
@@ -93,6 +93,27 @@ class Mosaic(VectorizedBaseImageAugmentationLayer):
             offset, param_name="offset", seed=seed
         )
         self.seed = seed
+        self.min_box_ratio_thresh = min_box_ratio_thresh
+
+    def _filter_clipped_boxes(self, boxes, original_boxes, threshold=0.2):
+        # intersection area / original area
+        x1, y1, x2, y2 = tf.split(boxes, 4, axis=-1)
+        ox1, oy1, ox2, oy2 = tf.split(original_boxes, 4, axis=-1)
+
+        w = tf.maximum(0.0, x2 - x1)
+        h = tf.maximum(0.0, y2 - y1)
+        area = w * h
+
+        ow = tf.maximum(0.0, ox2 - ox1)
+        oh = tf.maximum(0.0, oy2 - oy1)
+        original_area = ow * oh
+
+        ratio = area / (original_area + 1e-6)
+
+        mask = ratio >= threshold        
+        mask = tf.squeeze(mask, axis=-1) 
+
+        return mask
 
     def get_random_transformation_batch(self, batch_size, **kwargs):
         # pick 3 indices for every batch to create the mosaic output with.
@@ -258,6 +279,7 @@ class Mosaic(VectorizedBaseImageAugmentationLayer):
         # translating boxes
         boxes_for_mosaic = boxes_for_mosaic + translate_values
         boxes_for_mosaic = tf.reshape(boxes_for_mosaic, [batch_size, -1, 4])
+        original_boxes_for_mosaic = boxes_for_mosaic
         classes_for_mosaic = tf.reshape(classes_for_mosaic, [batch_size, -1])
         boxes_for_mosaic = {
             "boxes": boxes_for_mosaic,
@@ -268,6 +290,21 @@ class Mosaic(VectorizedBaseImageAugmentationLayer):
             bounding_box_format="xyxy",
             images=images,
         )
+        
+        # filter tiny boxes 
+        mask = self._filter_clipped_boxes(
+            boxes_for_mosaic["boxes"],
+            original_boxes_for_mosaic,
+            threshold=self.min_box_ratio_thresh
+        )
+
+        boxes_for_mosaic["boxes"] = tf.ragged.boolean_mask(
+            boxes_for_mosaic["boxes"], mask
+        )
+        boxes_for_mosaic["classes"] = tf.ragged.boolean_mask(
+            boxes_for_mosaic["classes"], mask
+        )
+
         boxes_for_mosaic = bounding_box.convert_format(
             boxes_for_mosaic,
             source="xyxy",
