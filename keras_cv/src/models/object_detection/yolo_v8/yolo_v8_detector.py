@@ -46,7 +46,7 @@ import tensorflow as tf
 BOX_REGRESSION_CHANNELS = 64
 
 class WeightedBCELoss(tf.keras.losses.Loss):
-    def __init__(self, pos_weight=None, from_logits=False, reduction=tf.keras.losses.Reduction.AUTO, name="weighted_bce"):
+    def __init__(self, pos_weight=None, from_logits=False, reduction="sum", name="weighted_bce"):
         """
         Args:
             pos_weight: scalar or 1D tensor/list of shape [num_classes]
